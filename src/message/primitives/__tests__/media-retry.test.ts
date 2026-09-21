@@ -175,6 +175,115 @@ test('media reupload resolves with the fresh direct path', async () => {
     assert.equal(result.directPath, '/v/t62.7118-24/reuploaded')
 })
 
+test('media reupload surfaces the decoded notification and the answering device', async () => {
+    const { requester, waitForSends } = createRequester({})
+
+    const pending = requester.request({
+        messageId: MESSAGE_ID,
+        chatJid: CHAT_JID,
+        mediaKey: mediaKey(),
+        fromMe: false
+    })
+    await waitForSends(1)
+
+    const messageSecret = new Uint8Array(32).fill(9)
+    requester.handleNotification(
+        notificationNode({
+            stanzaId: MESSAGE_ID,
+            result: proto.MediaRetryNotification.ResultType.SUCCESS,
+            directPath: '/v/t62.7118-24/reuploaded',
+            messageSecret
+        })
+    )
+
+    const result = await pending
+    assert.equal(result.from, ME_LID)
+    assert.deepEqual(new Uint8Array(result.messageSecret ?? []), messageSecret)
+    assert.equal(result.notification?.stanzaId, MESSAGE_ID)
+    assert.equal(result.notification?.directPath, '/v/t62.7118-24/reuploaded')
+})
+
+test('an empty message secret is not surfaced as key material', async () => {
+    const { requester, waitForSends } = createRequester({})
+
+    const pending = requester.request({
+        messageId: MESSAGE_ID,
+        chatJid: CHAT_JID,
+        mediaKey: mediaKey(),
+        fromMe: false
+    })
+    await waitForSends(1)
+
+    requester.handleNotification(
+        notificationNode({
+            stanzaId: MESSAGE_ID,
+            result: proto.MediaRetryNotification.ResultType.SUCCESS,
+            directPath: '/v/x',
+            messageSecret: new Uint8Array()
+        })
+    )
+
+    const result = await pending
+    assert.equal(result.messageSecret, undefined)
+    assert.ok(result.notification)
+})
+
+test('fields this version does not know survive on the decoded notification', async () => {
+    const { requester, waitForSends } = createRequester({})
+
+    const pending = requester.request({
+        messageId: MESSAGE_ID,
+        chatJid: CHAT_JID,
+        mediaKey: mediaKey(),
+        fromMe: false
+    })
+    await waitForSends(1)
+
+    // Field 5, varint 42 - nothing in the schema claims it today.
+    const unknown = new Uint8Array([0x28, 0x2a])
+    requester.handleNotification(
+        notificationNode({
+            stanzaId: MESSAGE_ID,
+            result: proto.MediaRetryNotification.ResultType.SUCCESS,
+            directPath: '/v/x',
+            $unknowns: [unknown]
+        })
+    )
+
+    const result = await pending
+    assert.equal(result.notification?.$unknowns?.length, 1)
+    assert.deepEqual(new Uint8Array(result.notification?.$unknowns?.[0] ?? []), unknown)
+})
+
+test('the error form of the notification carries no decoded payload', async () => {
+    const { requester, waitForSends } = createRequester({})
+
+    const pending = requester.request({
+        messageId: MESSAGE_ID,
+        chatJid: CHAT_JID,
+        mediaKey: mediaKey(),
+        fromMe: false
+    })
+    await waitForSends(1)
+
+    requester.handleNotification({
+        tag: 'notification',
+        attrs: { id: MESSAGE_ID, from: ME_LID, type: 'mediaretry' },
+        content: [
+            {
+                tag: 'error',
+                attrs: { code: String(proto.MediaRetryNotification.ResultType.NOT_FOUND) }
+            }
+        ]
+    })
+
+    const result = await pending
+    assert.equal(result.result, 'not_found')
+    assert.equal(result.notification, undefined)
+    assert.equal(result.messageSecret, undefined)
+    assert.equal(result.from, undefined)
+})
+
 test('media reupload maps a not-found answer without rejecting', async () => {
     const { requester, waitForSends } = createRequester({})
 

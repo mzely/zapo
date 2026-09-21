@@ -5,7 +5,7 @@ import {
     encryptServerErrorReceipt,
     MEDIA_RETRY_IV_SIZE
 } from '@media/crypto/media-retry'
-import { proto } from '@proto'
+import { proto, type Proto } from '@proto'
 import { WA_DEFAULTS, WA_NODE_TAGS } from '@protocol/constants'
 import { isGroupOrBroadcastJid, isOwnAccountJid, toUserJid } from '@protocol/jid'
 import { buildReceiptNode } from '@transport/node/builders/global'
@@ -16,11 +16,38 @@ import { parseOptionalInt, toError } from '@util/primitives'
 
 export type WaMediaRetryResultType = 'success' | 'not_found' | 'decryption_error' | 'general_error'
 
+/**
+ * Answer to a media reupload request.
+ *
+ * On `result: 'success'` the fresh `directPath` usually points at the same
+ * ciphertext the original message described, so its media key, hashes and
+ * length stay valid. Some primaries re-encrypt the file on every re-upload
+ * instead: the answer is still `success`, but the re-served blob no longer
+ * matches `fileEncSha256` and decryption fails with a MAC mismatch. The
+ * notification carries no key material for the new ciphertext - inspect
+ * `notification` to confirm, then treat that message as unrecoverable.
+ *
+ * `from`, `messageSecret` and `notification` are only set for the sealed form
+ * of the notification; an `<error>` answer carries none of them.
+ *
+ * @sensitive `messageSecret` is key material - do not log it or
+ * `JSON.stringify` the result.
+ */
 export interface WaMediaRetryResult {
     readonly messageId: string
     readonly result: WaMediaRetryResultType
     readonly resultCode: number
     readonly directPath?: string
+    /** Device that answered, as the notification named it. */
+    readonly from?: string
+    /** Set only when the answer carried a non-empty secret. */
+    readonly messageSecret?: Uint8Array
+    /**
+     * The whole decoded payload, including fields this version does not model
+     * (`$unknowns`). Exposed so callers can inspect answers the mapped fields
+     * above do not explain.
+     */
+    readonly notification?: Proto.IMediaRetryNotification
 }
 
 export interface WaMediaRetryRequest {
@@ -256,12 +283,16 @@ export function createMediaRetryRequester(
                         `mediaretry stanza id mismatch: sealed ${String(decoded.stanzaId)}`
                     )
                 }
+                const messageSecret = decoded.messageSecret ?? undefined
                 result = {
                     messageId: parsed.messageId,
                     result: toResultType(decoded.result),
                     resultCode:
                         decoded.result ?? proto.MediaRetryNotification.ResultType.GENERAL_ERROR,
-                    directPath: decoded.directPath ?? undefined
+                    directPath: decoded.directPath ?? undefined,
+                    from: parsed.from,
+                    messageSecret: messageSecret?.byteLength ? messageSecret : undefined,
+                    notification: decoded
                 }
             } catch (error) {
                 const normalized = toError(error)
