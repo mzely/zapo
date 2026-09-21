@@ -30,8 +30,9 @@ export type WaMediaRetryResultType = 'success' | 'not_found' | 'decryption_error
  * `from`, `messageSecret` and `notification` are only set for the sealed form
  * of the notification; an `<error>` answer carries none of them.
  *
- * @sensitive `messageSecret` is key material - do not log it or
- * `JSON.stringify` the result.
+ * @sensitive `messageSecret` and `notification.messageSecret` are the same key
+ * material - do not log either, do not `JSON.stringify` the result or the
+ * notification, and encrypt them at rest if you persist them.
  */
 export interface WaMediaRetryResult {
     readonly messageId: string
@@ -45,7 +46,9 @@ export interface WaMediaRetryResult {
     /**
      * The whole decoded payload, including fields this version does not model
      * (`$unknowns`). Exposed so callers can inspect answers the mapped fields
-     * above do not explain.
+     * above do not explain. Carries `messageSecret` too when the answer held
+     * one, so it is as sensitive as the field above - log the fields you need,
+     * never the object.
      */
     readonly notification?: Proto.IMediaRetryNotification
 }

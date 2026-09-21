@@ -829,7 +829,9 @@ export class WaMessageCoordinator {
      * case - so the message cannot be recovered through this API. Read
      * `result.notification` for the raw decoded answer, including fields this
      * version does not model, before concluding the download failed for some
-     * other reason.
+     * other reason. That payload repeats `messageSecret` when the answer
+     * carried one, so inspect the fields you need rather than logging or
+     * serializing the whole object.
      *
      * The other three `result` values are answers too, not thrown errors:
      * `not_found` means the sender no longer holds the file and nothing can
