@@ -5,7 +5,7 @@ import {
     encryptServerErrorReceipt,
     MEDIA_RETRY_IV_SIZE
 } from '@media/crypto/media-retry'
-import { proto, type Proto } from '@proto'
+import { proto } from '@proto'
 import { WA_DEFAULTS, WA_NODE_TAGS } from '@protocol/constants'
 import { isGroupOrBroadcastJid, isOwnAccountJid, toUserJid } from '@protocol/jid'
 import { buildReceiptNode } from '@transport/node/builders/global'
@@ -23,34 +23,15 @@ export type WaMediaRetryResultType = 'success' | 'not_found' | 'decryption_error
  * ciphertext the original message described, so its media key, hashes and
  * length stay valid. Some primaries re-encrypt the file on every re-upload
  * instead: the answer is still `success`, but the re-served blob no longer
- * matches `fileEncSha256` and decryption fails with a MAC mismatch. The
- * notification carries no key material for the new ciphertext - inspect
- * `notification` to confirm, then treat that message as unrecoverable.
- *
- * `from`, `messageSecret` and `notification` are only set for the sealed form
- * of the notification; an `<error>` answer carries none of them.
- *
- * @sensitive `messageSecret` and `notification.messageSecret` are the same key
- * material - do not log either, do not `JSON.stringify` the result or the
- * notification, and encrypt them at rest if you persist them.
+ * matches `fileEncSha256` and decryption fails with a MAC mismatch. Nothing in
+ * the round-trip carries key material for the new ciphertext, so treat that
+ * message as unrecoverable rather than retrying.
  */
 export interface WaMediaRetryResult {
     readonly messageId: string
     readonly result: WaMediaRetryResultType
     readonly resultCode: number
     readonly directPath?: string
-    /** Device that answered, as the notification named it. */
-    readonly from?: string
-    /** Set only when the answer carried a non-empty secret. */
-    readonly messageSecret?: Uint8Array
-    /**
-     * The whole decoded payload, including fields this version does not model
-     * (`$unknowns`). Exposed so callers can inspect answers the mapped fields
-     * above do not explain. Carries `messageSecret` too when the answer held
-     * one, so it is as sensitive as the field above - log the fields you need,
-     * never the object.
-     */
-    readonly notification?: Proto.IMediaRetryNotification
 }
 
 export interface WaMediaRetryRequest {
@@ -286,16 +267,12 @@ export function createMediaRetryRequester(
                         `mediaretry stanza id mismatch: sealed ${String(decoded.stanzaId)}`
                     )
                 }
-                const messageSecret = decoded.messageSecret ?? undefined
                 result = {
                     messageId: parsed.messageId,
                     result: toResultType(decoded.result),
                     resultCode:
                         decoded.result ?? proto.MediaRetryNotification.ResultType.GENERAL_ERROR,
-                    directPath: decoded.directPath ?? undefined,
-                    from: parsed.from,
-                    messageSecret: messageSecret?.byteLength ? messageSecret : undefined,
-                    notification: decoded
+                    directPath: decoded.directPath ?? undefined
                 }
             } catch (error) {
                 const normalized = toError(error)

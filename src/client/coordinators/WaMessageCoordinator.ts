@@ -825,13 +825,8 @@ export class WaMessageCoordinator {
      * blob. Some primaries re-encrypt the file on every re-upload, and the
      * re-served bytes then fail `fileEncSha256` and make `downloadBytes()`
      * throw a MAC mismatch. Nothing in the round-trip carries key material for
-     * the new ciphertext - the notification's `messageSecret` is empty in this
-     * case - so the message cannot be recovered through this API. Read
-     * `result.notification` for the raw decoded answer, including fields this
-     * version does not model, before concluding the download failed for some
-     * other reason. That payload repeats `messageSecret` when the answer
-     * carried one, so inspect the fields you need rather than logging or
-     * serializing the whole object.
+     * the new ciphertext, so the message cannot be recovered through this API
+     * and requesting another reupload will not help.
      *
      * The other three `result` values are answers too, not thrown errors:
      * `not_found` means the sender no longer holds the file and nothing can
